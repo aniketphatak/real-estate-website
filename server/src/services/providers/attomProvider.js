@@ -3,15 +3,23 @@ const axios = require('axios');
 /**
  * ATTOM Data Provider
  * Provides comprehensive property data including mortgage, ownership, and valuation
+ * API Documentation: https://api.gateway.attomdata.com/propertyapi/v1.0.0
  */
 
 class AttomProvider {
   constructor() {
     this.apiKey = process.env.ATTOM_API_KEY;
     this.baseUrl = 'https://api.gateway.attomdata.com/propertyapi/v1.0.0';
-    this.headers = {
+  }
+
+  /**
+   * Get headers for API requests
+   */
+  getHeaders() {
+    return {
       'apikey': this.apiKey,
-      'Accept': 'application/json'
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
     };
   }
 
@@ -19,7 +27,45 @@ class AttomProvider {
    * Check if provider is configured
    */
   isConfigured() {
-    return !!this.apiKey;
+    const configured = !!this.apiKey && this.apiKey.length > 10;
+    if (!configured) {
+      console.log('ATTOM API key not configured or invalid');
+    }
+    return configured;
+  }
+
+  /**
+   * Make API request with error handling
+   */
+  async makeRequest(endpoint, params) {
+    try {
+      console.log(`ATTOM API Request: ${endpoint}`, params);
+
+      const response = await axios.get(`${this.baseUrl}${endpoint}`, {
+        headers: this.getHeaders(),
+        params: params,
+        timeout: 15000
+      });
+
+      console.log(`ATTOM API Response status: ${response.status}`);
+      return response.data;
+    } catch (error) {
+      if (error.response) {
+        console.error(`ATTOM API Error ${error.response.status}:`, error.response.data);
+
+        // If 401/403, API key might be invalid
+        if (error.response.status === 401 || error.response.status === 403) {
+          console.error('ATTOM API: Authentication failed. Check your API key.');
+        }
+        // If 404, endpoint might not exist or property not found
+        if (error.response.status === 404) {
+          console.error('ATTOM API: Property not found or endpoint invalid');
+        }
+      } else {
+        console.error('ATTOM API Error:', error.message);
+      }
+      return null;
+    }
   }
 
   /**
@@ -27,67 +73,74 @@ class AttomProvider {
    */
   async getPropertyInfo(addressParams) {
     if (!this.isConfigured()) {
-      console.log('ATTOM provider not configured, returning mock data');
       return this.getMockPropertyInfo(addressParams);
     }
 
-    try {
-      const { address, city, state, zip } = addressParams;
+    const { address, city, state, zip } = addressParams;
 
-      const response = await axios.get(`${this.baseUrl}/property/basicprofile`, {
-        headers: this.headers,
-        params: {
-          address1: address,
-          address2: `${city}, ${state} ${zip}`
-        }
-      });
+    const data = await this.makeRequest('/property/basicprofile', {
+      address1: address,
+      address2: `${city}, ${state} ${zip}`
+    });
 
-      return this.normalizePropertyData(response.data);
-    } catch (error) {
-      console.error('ATTOM property info error:', error.message);
-      return this.getMockPropertyInfo(addressParams);
+    if (data && data.property && data.property.length > 0) {
+      console.log('ATTOM: Got real property data');
+      return this.normalizePropertyData(data);
     }
+
+    console.log('ATTOM: No property data found, using mock');
+    return this.getMockPropertyInfo(addressParams);
   }
 
   /**
-   * Get property valuation
+   * Get property valuation (AVM)
    */
   async getValuation(addressParams) {
     if (!this.isConfigured()) {
       return this.getMockValuation(addressParams);
     }
 
-    try {
-      const { address, city, state, zip } = addressParams;
+    const { address, city, state, zip } = addressParams;
 
-      const response = await axios.get(`${this.baseUrl}/valuation/homeequity`, {
-        headers: this.headers,
-        params: {
-          address1: address,
-          address2: `${city}, ${state} ${zip}`
-        }
+    // Try AVM endpoint first
+    let data = await this.makeRequest('/attomavm/detail', {
+      address1: address,
+      address2: `${city}, ${state} ${zip}`
+    });
+
+    // Fallback to assessment endpoint
+    if (!data || !data.property) {
+      data = await this.makeRequest('/assessment/detail', {
+        address1: address,
+        address2: `${city}, ${state} ${zip}`
       });
+    }
 
-      if (response.data && response.data.property && response.data.property.length > 0) {
-        const prop = response.data.property[0];
-        const avm = prop.avm || {};
+    if (data && data.property && data.property.length > 0) {
+      const prop = data.property[0];
+      const avm = prop.avm || prop.assessment || {};
 
+      const estimatedValue = avm.amount?.value ||
+                            avm.assessed?.assdTtlValue ||
+                            prop.assessment?.market?.mktTtlValue;
+
+      if (estimatedValue) {
+        console.log('ATTOM: Got real valuation:', estimatedValue);
         return {
-          estimatedValue: avm.amount?.value || null,
+          estimatedValue: estimatedValue,
           range: {
-            low: avm.amount?.low || null,
-            high: avm.amount?.high || null
+            low: avm.amount?.low || Math.round(estimatedValue * 0.9),
+            high: avm.amount?.high || Math.round(estimatedValue * 1.1)
           },
           confidence: avm.fsd ? (avm.fsd < 10 ? 'high' : avm.fsd < 20 ? 'medium' : 'low') : 'medium',
-          lastUpdated: avm.date || new Date().toISOString()
+          lastUpdated: avm.eventDate || new Date().toISOString(),
+          source: 'ATTOM AVM'
         };
       }
-
-      return this.getMockValuation(addressParams);
-    } catch (error) {
-      console.error('ATTOM valuation error:', error.message);
-      return this.getMockValuation(addressParams);
     }
+
+    console.log('ATTOM: No valuation data found, using mock');
+    return this.getMockValuation(addressParams);
   }
 
   /**
@@ -98,39 +151,36 @@ class AttomProvider {
       return this.getMockMortgageInfo(addressParams);
     }
 
-    try {
-      const { address, city, state, zip } = addressParams;
+    const { address, city, state, zip } = addressParams;
 
-      const response = await axios.get(`${this.baseUrl}/property/detailmortgage`, {
-        headers: this.headers,
-        params: {
-          address1: address,
-          address2: `${city}, ${state} ${zip}`
-        }
-      });
+    const data = await this.makeRequest('/property/detailmortgage', {
+      address1: address,
+      address2: `${city}, ${state} ${zip}`
+    });
 
-      if (response.data && response.data.property && response.data.property.length > 0) {
-        const mortgages = response.data.property[0].mortgage || [];
+    if (data && data.property && data.property.length > 0) {
+      const prop = data.property[0];
+      const mortgageData = prop.mortgage || [];
 
-        return mortgages.map(m => ({
-          lender: m.lender?.companyName || 'Unknown',
-          originalAmount: m.amount || null,
+      if (mortgageData.length > 0) {
+        console.log('ATTOM: Got real mortgage data');
+        return mortgageData.map(m => ({
+          lender: m.lender?.companyName || m.lenderName || 'Unknown Lender',
+          originalAmount: m.amount || m.loanAmount || null,
           currentBalance: m.currentBalance || null,
           interestRate: m.interestRate || null,
           interestRateType: m.interestRateType || 'Fixed',
-          loanType: m.loanType || 'Conventional',
-          term: m.term || null,
-          recordingDate: m.recordingDate || null,
+          loanType: m.loanType || m.loanPurpose || 'Conventional',
+          term: m.term || m.loanTermMonths / 12 || null,
+          recordingDate: m.recordingDate || m.documentDate || null,
           maturityDate: m.maturityDate || null,
-          position: m.position || 1
+          position: m.mortgageSequence || m.position || 1
         }));
       }
-
-      return this.getMockMortgageInfo(addressParams);
-    } catch (error) {
-      console.error('ATTOM mortgage error:', error.message);
-      return this.getMockMortgageInfo(addressParams);
     }
+
+    console.log('ATTOM: No mortgage data found, using mock');
+    return this.getMockMortgageInfo(addressParams);
   }
 
   /**
@@ -141,40 +191,51 @@ class AttomProvider {
       return this.getMockOwnerInfo(addressParams);
     }
 
-    try {
-      const { address, city, state, zip } = addressParams;
+    const { address, city, state, zip } = addressParams;
 
-      const response = await axios.get(`${this.baseUrl}/property/detailowner`, {
-        headers: this.headers,
-        params: {
-          address1: address,
-          address2: `${city}, ${state} ${zip}`
-        }
-      });
+    // Try detail with owner info
+    const data = await this.makeRequest('/property/detail', {
+      address1: address,
+      address2: `${city}, ${state} ${zip}`
+    });
 
-      if (response.data && response.data.property && response.data.property.length > 0) {
-        const owner = response.data.property[0].owner || {};
+    if (data && data.property && data.property.length > 0) {
+      const prop = data.property[0];
 
+      // Owner info might be in different places depending on the endpoint
+      const owner = prop.assessment?.owner || prop.owner || {};
+      const sale = prop.sale || prop.assessment?.sale || {};
+
+      const ownerName = owner.owner1?.fullName ||
+                       owner.corporateOwner ||
+                       owner.owner1Last && owner.owner1First ?
+                         `${owner.owner1First} ${owner.owner1Last}` : null;
+
+      if (ownerName) {
+        console.log('ATTOM: Got real owner data:', ownerName);
         return {
-          name: owner.name1 || owner.corporateName || 'Unknown',
-          mailingAddress: owner.mailingAddress ? {
-            street: owner.mailingAddress.address1,
-            city: owner.mailingAddress.city,
-            state: owner.mailingAddress.state,
-            zip: owner.mailingAddress.zip
-          } : null,
-          ownerType: owner.type || 'Individual',
-          ownerOccupied: owner.occupancyType === 'Owner Occupied',
-          purchaseDate: owner.lastSaleDate || null,
-          purchasePrice: owner.lastSalePrice || null
+          name: ownerName,
+          mailingAddress: owner.mailingAddressFull ? {
+            street: owner.mailingAddressOneLine || owner.mailingAddressFull,
+            city: owner.mailingAddressCity,
+            state: owner.mailingAddressState,
+            zip: owner.mailingAddressZip
+          } : {
+            street: address,
+            city: city,
+            state: state,
+            zip: zip
+          },
+          ownerType: owner.corporateOwner ? 'Corporation' : 'Individual',
+          ownerOccupied: owner.absenteeOwnerStatus === 'O' || owner.ownerOccupied === 'Y',
+          purchaseDate: sale.saleTransDate || sale.recordingDate || null,
+          purchasePrice: sale.saleAmountData?.saleAmt || sale.amount || null
         };
       }
-
-      return this.getMockOwnerInfo(addressParams);
-    } catch (error) {
-      console.error('ATTOM owner error:', error.message);
-      return this.getMockOwnerInfo(addressParams);
     }
+
+    console.log('ATTOM: No owner data found, using mock');
+    return this.getMockOwnerInfo(addressParams);
   }
 
   /**
@@ -185,17 +246,15 @@ class AttomProvider {
       return this.getMockPropertyInfo({});
     }
 
-    try {
-      const response = await axios.get(`${this.baseUrl}/property/detail`, {
-        headers: this.headers,
-        params: { attomid: propertyId }
-      });
+    const data = await this.makeRequest('/property/detail', {
+      attomid: propertyId
+    });
 
-      return this.normalizePropertyData(response.data);
-    } catch (error) {
-      console.error('ATTOM property by ID error:', error.message);
-      return this.getMockPropertyInfo({});
+    if (data) {
+      return this.normalizePropertyData(data);
     }
+
+    return this.getMockPropertyInfo({});
   }
 
   /**
@@ -209,18 +268,19 @@ class AttomProvider {
     const prop = data.property[0];
     const building = prop.building || {};
     const lot = prop.lot || {};
+    const summary = prop.summary || building.summary || {};
 
     return {
       basic: {
-        propertyType: prop.propertyType || building.summary?.propClass,
-        yearBuilt: building.summary?.yearBuilt,
-        bedrooms: building.rooms?.beds,
-        bathrooms: building.rooms?.bathsTotal,
-        squareFeet: building.size?.livingSize || building.size?.grossSize,
-        lotSize: lot.lotSize1 || lot.lotSize2,
-        stories: building.summary?.stories,
+        propertyType: summary.propType || summary.propClass || prop.propertyType,
+        yearBuilt: summary.yearBuilt || building.summary?.yearBuilt,
+        bedrooms: summary.beds || building.rooms?.beds,
+        bathrooms: summary.baths || building.rooms?.bathsTotal,
+        squareFeet: summary.sqft || building.size?.livingSize || building.size?.grossSize,
+        lotSize: lot.lotSize1 || lot.lotSize2 || summary.lotSize,
+        stories: summary.stories || building.summary?.stories,
         parking: building.parking?.prkgSize,
-        pool: building.interior?.fplcCount > 0,
+        pool: building.interior?.poolInd === 'Y',
         apn: prop.identifier?.apn,
         zoning: lot.zoning
       },
@@ -239,7 +299,7 @@ class AttomProvider {
       } : null,
       salesHistory: prop.sale ? [{
         date: prop.sale.saleTransDate,
-        price: prop.sale.saleAmountData?.saleAmt,
+        price: prop.sale.saleAmountData?.saleAmt || prop.sale.amount,
         event: 'Sold'
       }] : []
     };
@@ -263,7 +323,7 @@ class AttomProvider {
     if (building.parking?.prkgSize) {
       features.push(`${building.parking.prkgSize} Car Garage`);
     }
-    if (building.pool) {
+    if (building.interior?.poolInd === 'Y') {
       features.push('Swimming Pool');
     }
 
@@ -271,93 +331,57 @@ class AttomProvider {
   }
 
   /**
-   * Mock data for development/demo
+   * Mock data for development/demo (shown when API fails or is not configured)
    */
   getMockPropertyInfo(addressParams) {
     return {
       basic: {
         propertyType: 'Single Family Residence',
-        yearBuilt: 2008,
-        bedrooms: 4,
-        bathrooms: 3,
-        squareFeet: 2650,
-        lotSize: 9200,
-        stories: 2,
-        parking: 3,
-        pool: true,
-        apn: '456-789-012',
-        zoning: 'R-1'
+        yearBuilt: null,
+        bedrooms: null,
+        bathrooms: null,
+        squareFeet: null,
+        lotSize: null,
+        stories: null,
+        parking: null,
+        pool: null,
+        apn: null,
+        zoning: null
       },
-      details: {
-        construction: 'Frame',
-        roofType: 'Tile',
-        heating: 'Central',
-        cooling: 'Central Air',
-        foundation: 'Slab'
-      },
-      features: [
-        'Central Air Conditioning',
-        'Central Heating',
-        '1 Fireplace(s)',
-        '3 Car Garage',
-        'Swimming Pool'
-      ],
-      taxInfo: {
-        assessedValue: 485000,
-        taxAmount: 5875,
-        taxYear: 2024
-      },
-      salesHistory: [
-        { date: '2018-09-22', price: 520000, event: 'Sold' }
-      ]
+      details: {},
+      features: [],
+      taxInfo: null,
+      salesHistory: [],
+      _isMockData: true,
+      _note: 'Real data unavailable - ATTOM API not configured or property not found'
     };
   }
 
   getMockValuation(addressParams) {
-    const baseValue = 575000;
-    const variance = Math.floor(Math.random() * 40000) - 20000;
-
     return {
-      estimatedValue: baseValue + variance,
-      range: {
-        low: baseValue - 45000,
-        high: baseValue + 50000
-      },
-      confidence: 'high',
-      lastUpdated: new Date().toISOString()
+      estimatedValue: null,
+      range: null,
+      confidence: 'low',
+      lastUpdated: new Date().toISOString(),
+      source: 'ATTOM (No Data)',
+      _isMockData: true
     };
   }
 
   getMockMortgageInfo(addressParams) {
-    return [
-      {
-        lender: 'Wells Fargo Home Mortgage',
-        originalAmount: 420000,
-        currentBalance: 385000,
-        interestRate: 3.75,
-        interestRateType: 'Fixed',
-        loanType: 'Conventional',
-        term: 30,
-        recordingDate: '2018-09-22',
-        maturityDate: '2048-09-22',
-        position: 1
-      }
-    ];
+    return [];
   }
 
   getMockOwnerInfo(addressParams) {
     return {
-      name: 'John & Jane Smith',
-      mailingAddress: {
-        street: addressParams.address || '123 Main St',
-        city: addressParams.city || 'Los Angeles',
-        state: addressParams.state || 'CA',
-        zip: addressParams.zip || '90001'
-      },
-      ownerType: 'Individual',
-      ownerOccupied: true,
-      purchaseDate: '2018-09-22',
-      purchasePrice: 520000
+      name: null,
+      mailingAddress: null,
+      ownerType: null,
+      ownerOccupied: null,
+      purchaseDate: null,
+      purchasePrice: null,
+      _isMockData: true,
+      _note: 'Owner data requires ATTOM API subscription'
     };
   }
 }
