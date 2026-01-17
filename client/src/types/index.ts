@@ -62,11 +62,21 @@ export interface ValuationEstimate {
   lastUpdated?: string;
 }
 
+export interface RentEstimate {
+  monthlyRent: number;
+  rentRange?: {
+    low: number;
+    high: number;
+  };
+  source: string;
+}
+
 export interface Valuation {
   estimates: ValuationEstimate[];
   averageValue: number;
   confidenceScore: string;
   lastUpdated: string;
+  rentEstimate?: RentEstimate;
 }
 
 export interface Mortgage {

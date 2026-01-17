@@ -214,15 +214,22 @@ class PropertyService {
     try {
       console.log('Fetching valuations from multiple sources...');
 
-      // Fetch valuations from all sources in parallel
-      const valuations = await Promise.allSettled([
-        this.freeProviders.zillowReal.getValuation(addressParams),
-        this.freeProviders.redfin.getValuation(addressParams),
-        this.freeProviders.rentcast.getValuation(addressParams),  // NEW: RentCast
-        this.freeProviders.census.getValuation(addressParams),
-        // Also try paid providers if configured
-        this.paidProviders.attom.getValuation(addressParams),
-        this.paidProviders.countyRecords.getAssessedValue(addressParams)
+      // Fetch valuations and rent estimate in parallel
+      const [valuations, rentEstimateResult] = await Promise.all([
+        Promise.allSettled([
+          this.freeProviders.zillowReal.getValuation(addressParams),
+          this.freeProviders.redfin.getValuation(addressParams),
+          this.freeProviders.rentcast.getValuation(addressParams),  // RentCast
+          this.freeProviders.census.getValuation(addressParams),
+          // Also try paid providers if configured
+          this.paidProviders.attom.getValuation(addressParams),
+          this.paidProviders.countyRecords.getAssessedValue(addressParams)
+        ]),
+        // Fetch rent estimate from RentCast
+        this.freeProviders.rentcast.getRentEstimate(addressParams).catch(err => {
+          console.log('Rent estimate error:', err.message);
+          return null;
+        })
       ]);
 
       const providerNames = ['Zillow', 'Redfin', 'RentCast', 'Census (Tract Median)', 'ATTOM', 'County Records'];
@@ -231,6 +238,7 @@ class PropertyService {
         estimates: [],
         averageValue: 0,
         confidenceScore: 'low',
+        rentEstimate: null,
         lastUpdated: new Date().toISOString()
       };
 
@@ -257,8 +265,26 @@ class PropertyService {
           if (index < 2 && valuation.value.estimatedValue > 0) {
             hasRealData = true;
           }
+
+          // Extract rent estimate from RentCast valuation if available
+          if (index === 2 && valuation.value.rentEstimate) {
+            result.rentEstimate = {
+              monthlyRent: valuation.value.rentEstimate,
+              source: 'RentCast'
+            };
+          }
         }
       });
+
+      // Use dedicated rent estimate if available
+      if (rentEstimateResult && rentEstimateResult.monthlyRent) {
+        result.rentEstimate = {
+          monthlyRent: rentEstimateResult.monthlyRent,
+          rentRange: rentEstimateResult.rentRange || null,
+          source: rentEstimateResult.source || 'RentCast'
+        };
+        console.log('Got rent estimate:', result.rentEstimate);
+      }
 
       if (count > 0) {
         result.averageValue = Math.round(totalValue / count);

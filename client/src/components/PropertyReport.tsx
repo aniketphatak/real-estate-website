@@ -136,18 +136,42 @@ export default function PropertyReport({ data, isLoading }: PropertyReportProps)
 
         {/* Valuation Card */}
         <ReportCard title="Property Valuation" icon={<TrendingUp className="w-5 h-5" />}>
-          <div className="mb-6">
-            <div className="text-3xl font-bold text-gray-900 mb-1">
-              {formatCurrency(valuation.averageValue)}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`px-2 py-1 rounded text-xs font-medium ${
+          {/* Property Value */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <div className="text-sm text-blue-600 mb-1">Estimated Value</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {formatCurrency(valuation.averageValue)}
+              </div>
+              <span className={`inline-block mt-2 px-2 py-1 rounded text-xs font-medium ${
                 valuation.confidenceScore === 'high' ? 'bg-green-100 text-green-700' :
                 valuation.confidenceScore === 'medium' ? 'bg-yellow-100 text-yellow-700' :
                 'bg-red-100 text-red-700'
               }`}>
                 {valuation.confidenceScore} confidence
               </span>
+            </div>
+
+            {/* Rent Estimate */}
+            <div className="p-4 bg-green-50 rounded-lg">
+              <div className="text-sm text-green-600 mb-1">Estimated Monthly Rent</div>
+              {valuation.rentEstimate?.monthlyRent ? (
+                <>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {formatCurrency(valuation.rentEstimate.monthlyRent)}/mo
+                  </div>
+                  {valuation.rentEstimate.rentRange && (
+                    <div className="text-xs text-gray-500 mt-2">
+                      Range: {formatCurrency(valuation.rentEstimate.rentRange.low)} - {formatCurrency(valuation.rentEstimate.rentRange.high)}
+                    </div>
+                  )}
+                  <div className="text-xs text-gray-400 mt-1">
+                    Source: {valuation.rentEstimate.source}
+                  </div>
+                </>
+              ) : (
+                <div className="text-gray-400 text-sm">Not available</div>
+              )}
             </div>
           </div>
 
