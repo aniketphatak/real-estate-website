@@ -2,7 +2,8 @@ const axios = require('axios');
 
 /**
  * Zillow/RapidAPI Property Data Provider
- * Uses RapidAPI's Zillow API for property data
+ * Uses RapidAPI's Zillow API for property data (PAID API)
+ * Note: This is the paid RapidAPI version - see zillowRealProvider for free endpoints
  */
 
 class ZillowProvider {
@@ -15,20 +16,14 @@ class ZillowProvider {
     };
   }
 
-  /**
-   * Check if provider is configured
-   */
   isConfigured() {
-    return !!this.apiKey;
+    return !!this.apiKey && this.apiKey.length > 10;
   }
 
-  /**
-   * Get property information by address
-   */
   async getPropertyInfo(addressParams) {
     if (!this.isConfigured()) {
-      console.log('Zillow provider not configured, returning mock data');
-      return this.getMockPropertyInfo(addressParams);
+      console.log('Zillow RapidAPI not configured');
+      return null;
     }
 
     try {
@@ -37,22 +32,20 @@ class ZillowProvider {
 
       const response = await axios.get(`${this.baseUrl}/property`, {
         headers: this.headers,
-        params: { address: fullAddress }
+        params: { address: fullAddress },
+        timeout: 15000
       });
 
       return this.normalizePropertyData(response.data);
     } catch (error) {
-      console.error('Zillow API error:', error.message);
-      return this.getMockPropertyInfo(addressParams);
+      console.error('Zillow RapidAPI error:', error.message);
+      return null;
     }
   }
 
-  /**
-   * Get property valuation (Zestimate)
-   */
   async getValuation(addressParams) {
     if (!this.isConfigured()) {
-      return this.getMockValuation(addressParams);
+      return null;
     }
 
     try {
@@ -61,7 +54,8 @@ class ZillowProvider {
 
       const response = await axios.get(`${this.baseUrl}/propertyExtendedSearch`, {
         headers: this.headers,
-        params: { location: fullAddress }
+        params: { location: fullAddress },
+        timeout: 15000
       });
 
       if (response.data && response.data.props && response.data.props.length > 0) {
@@ -73,29 +67,28 @@ class ZillowProvider {
             high: prop.zestimateHighPercent ? prop.zestimate * (1 + prop.zestimateHighPercent / 100) : null
           },
           confidence: 'high',
-          lastUpdated: new Date().toISOString()
+          lastUpdated: new Date().toISOString(),
+          source: 'Zillow (RapidAPI)'
         };
       }
 
-      return this.getMockValuation(addressParams);
+      return null;
     } catch (error) {
       console.error('Zillow valuation error:', error.message);
-      return this.getMockValuation(addressParams);
+      return null;
     }
   }
 
-  /**
-   * Get address suggestions for autocomplete
-   */
   async getAddressSuggestions(query) {
     if (!this.isConfigured()) {
-      return this.getMockSuggestions(query);
+      return [];
     }
 
     try {
       const response = await axios.get(`${this.baseUrl}/propertyExtendedSearch`, {
         headers: this.headers,
-        params: { location: query, status_type: 'ForSale' }
+        params: { location: query, status_type: 'ForSale' },
+        timeout: 10000
       });
 
       if (response.data && response.data.props) {
@@ -111,13 +104,10 @@ class ZillowProvider {
       return [];
     } catch (error) {
       console.error('Zillow autocomplete error:', error.message);
-      return this.getMockSuggestions(query);
+      return [];
     }
   }
 
-  /**
-   * Normalize API response to standard format
-   */
   normalizePropertyData(data) {
     if (!data) return null;
 
@@ -157,93 +147,6 @@ class ZillowProvider {
         bikeScore: data.bikeScore
       }
     };
-  }
-
-  /**
-   * Mock data for development/demo
-   */
-  getMockPropertyInfo(addressParams) {
-    return {
-      basic: {
-        propertyType: 'Single Family',
-        yearBuilt: 2005,
-        bedrooms: 4,
-        bathrooms: 2.5,
-        squareFeet: 2450,
-        lotSize: 8500,
-        stories: 2,
-        parking: 2,
-        pool: false,
-        apn: '123-456-789',
-        zoning: 'Residential'
-      },
-      details: {
-        construction: 'Wood Frame',
-        roofType: 'Composition Shingle',
-        heating: 'Forced Air',
-        cooling: 'Central Air',
-        foundation: 'Concrete Slab',
-        flooring: 'Hardwood, Carpet, Tile',
-        exteriorWalls: 'Stucco'
-      },
-      features: [
-        'Central Air Conditioning',
-        'Fireplace',
-        'Hardwood Floors',
-        'Granite Countertops',
-        'Stainless Steel Appliances',
-        'Walk-in Closet',
-        'Attached Garage'
-      ],
-      taxInfo: {
-        assessedValue: 425000,
-        taxAmount: 5250,
-        taxYear: 2024
-      },
-      salesHistory: [
-        { date: '2019-06-15', price: 485000, event: 'Sold' },
-        { date: '2012-03-20', price: 375000, event: 'Sold' },
-        { date: '2005-08-10', price: 320000, event: 'Sold (New Construction)' }
-      ],
-      neighborhood: {
-        walkScore: 72,
-        transitScore: 45,
-        bikeScore: 58
-      }
-    };
-  }
-
-  getMockValuation(addressParams) {
-    const baseValue = 550000;
-    const variance = Math.floor(Math.random() * 50000) - 25000;
-
-    return {
-      estimatedValue: baseValue + variance,
-      range: {
-        low: baseValue - 30000,
-        high: baseValue + 35000
-      },
-      confidence: 'high',
-      lastUpdated: new Date().toISOString()
-    };
-  }
-
-  getMockSuggestions(query) {
-    const suggestions = [
-      { address: '123 Main St', city: 'Los Angeles', state: 'CA', zip: '90001' },
-      { address: '456 Oak Ave', city: 'San Francisco', state: 'CA', zip: '94102' },
-      { address: '789 Elm Blvd', city: 'San Diego', state: 'CA', zip: '92101' },
-      { address: '321 Pine Dr', city: 'Seattle', state: 'WA', zip: '98101' },
-      { address: '654 Maple Ln', city: 'Austin', state: 'TX', zip: '78701' }
-    ];
-
-    return suggestions
-      .filter(s => s.address.toLowerCase().includes(query.toLowerCase()) ||
-                   s.city.toLowerCase().includes(query.toLowerCase()))
-      .map(s => ({
-        ...s,
-        formatted: `${s.address}, ${s.city}, ${s.state} ${s.zip}`
-      }));
   }
 }
 
