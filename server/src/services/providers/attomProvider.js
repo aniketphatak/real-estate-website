@@ -270,6 +270,15 @@ class AttomProvider {
     const lot = prop.lot || {};
     const summary = prop.summary || building.summary || {};
 
+    // Lot size - ATTOM returns in acres, convert to display format
+    const lotSizeAcres = lot.lotSize1 || lot.lotSize2 || summary.lotSize;
+    const lotSizeDisplay = lotSizeAcres ?
+      (lotSizeAcres >= 1 ? `${lotSizeAcres} acres` : `${Math.round(lotSizeAcres * 43560)} sqft`) : null;
+
+    // Parking - use garage spaces count, not size in sqft
+    const garageSpaces = building.parking?.prkgSpaces || building.parking?.garageCars ||
+                         building.summary?.prkgSpaces || null;
+
     return {
       basic: {
         propertyType: summary.propType || summary.propClass || prop.propertyType,
@@ -277,9 +286,11 @@ class AttomProvider {
         bedrooms: summary.beds || building.rooms?.beds,
         bathrooms: summary.baths || building.rooms?.bathsTotal,
         squareFeet: summary.sqft || building.size?.livingSize || building.size?.grossSize,
-        lotSize: lot.lotSize1 || lot.lotSize2 || summary.lotSize,
+        lotSize: lotSizeDisplay,
+        lotSizeAcres: lotSizeAcres,
         stories: summary.stories || building.summary?.stories,
-        parking: building.parking?.prkgSize,
+        parking: garageSpaces,
+        parkingSqft: building.parking?.prkgSize,
         pool: building.interior?.poolInd === 'Y',
         apn: prop.identifier?.apn,
         zoning: lot.zoning
@@ -320,8 +331,13 @@ class AttomProvider {
     if (building.interior?.fplcCount > 0) {
       features.push(`${building.interior.fplcCount} Fireplace(s)`);
     }
-    if (building.parking?.prkgSize) {
-      features.push(`${building.parking.prkgSize} Car Garage`);
+    // Use garage spaces count, not prkgSize (which is sqft)
+    const garageSpaces = building.parking?.prkgSpaces || building.parking?.garageCars ||
+                         building.summary?.prkgSpaces;
+    if (garageSpaces && garageSpaces > 0) {
+      features.push(`${garageSpaces} Car Garage`);
+    } else if (building.parking?.prkgType) {
+      features.push(`${building.parking.prkgType} Parking`);
     }
     if (building.interior?.poolInd === 'Y') {
       features.push('Swimming Pool');
