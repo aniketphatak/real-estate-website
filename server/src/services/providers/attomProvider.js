@@ -153,25 +153,57 @@ class AttomProvider {
 
     const { address, city, state, zip } = addressParams;
 
-    const data = await this.makeRequest('/property/detailmortgage', {
+    // Try detailmortgage endpoint first
+    let data = await this.makeRequest('/property/detailmortgage', {
+      address1: address,
+      address2: `${city}, ${state} ${zip}`
+    });
+
+    // Log the response structure for debugging
+    if (data && data.property && data.property.length > 0) {
+      const prop = data.property[0];
+      console.log('ATTOM Mortgage Response Keys:', Object.keys(prop));
+
+      // Try different possible mortgage data locations
+      const mortgageData = prop.mortgage || prop.mortgageHistory || prop.loan || [];
+
+      if (Array.isArray(mortgageData) && mortgageData.length > 0) {
+        console.log('ATTOM: Got real mortgage data, count:', mortgageData.length);
+        return mortgageData.map(m => ({
+          lender: m.lender?.companyName || m.lenderName || m.lender || 'Unknown Lender',
+          originalAmount: m.amount || m.loanAmount || m.originalLoanAmount || null,
+          currentBalance: m.currentBalance || null,
+          interestRate: m.interestRate || m.rate || null,
+          interestRateType: m.interestRateType || m.rateType || 'Fixed',
+          loanType: m.loanType || m.loanPurpose || m.type || 'Conventional',
+          term: m.term || (m.loanTermMonths ? m.loanTermMonths / 12 : null) || null,
+          recordingDate: m.recordingDate || m.documentDate || m.date || null,
+          maturityDate: m.maturityDate || null,
+          position: m.mortgageSequence || m.position || 1
+        }));
+      }
+    }
+
+    // Try expandedprofile endpoint as fallback
+    data = await this.makeRequest('/property/expandedprofile', {
       address1: address,
       address2: `${city}, ${state} ${zip}`
     });
 
     if (data && data.property && data.property.length > 0) {
       const prop = data.property[0];
-      const mortgageData = prop.mortgage || [];
+      const mortgageData = prop.mortgage || prop.mortgageHistory || [];
 
-      if (mortgageData.length > 0) {
-        console.log('ATTOM: Got real mortgage data');
+      if (Array.isArray(mortgageData) && mortgageData.length > 0) {
+        console.log('ATTOM: Got mortgage from expandedprofile');
         return mortgageData.map(m => ({
-          lender: m.lender?.companyName || m.lenderName || 'Unknown Lender',
+          lender: m.lender?.companyName || m.lenderName || m.lender || 'Unknown Lender',
           originalAmount: m.amount || m.loanAmount || null,
           currentBalance: m.currentBalance || null,
           interestRate: m.interestRate || null,
           interestRateType: m.interestRateType || 'Fixed',
           loanType: m.loanType || m.loanPurpose || 'Conventional',
-          term: m.term || m.loanTermMonths / 12 || null,
+          term: m.term || null,
           recordingDate: m.recordingDate || m.documentDate || null,
           maturityDate: m.maturityDate || null,
           position: m.mortgageSequence || m.position || 1
@@ -179,7 +211,7 @@ class AttomProvider {
       }
     }
 
-    console.log('ATTOM: No mortgage data found, using mock');
+    console.log('ATTOM: No mortgage data found');
     return this.getMockMortgageInfo(addressParams);
   }
 
@@ -193,26 +225,76 @@ class AttomProvider {
 
     const { address, city, state, zip } = addressParams;
 
-    // Try detail with owner info
-    const data = await this.makeRequest('/property/detail', {
+    // Try expandedprofile first - it usually has the most complete owner data
+    let data = await this.makeRequest('/property/expandedprofile', {
       address1: address,
       address2: `${city}, ${state} ${zip}`
     });
 
     if (data && data.property && data.property.length > 0) {
       const prop = data.property[0];
+      console.log('ATTOM Owner Response Keys:', Object.keys(prop));
 
-      // Owner info might be in different places depending on the endpoint
+      // Check for owner data in various locations
+      const owner = prop.assessment?.owner || prop.owner || prop.ownerInfo || {};
+      const sale = prop.sale || prop.assessment?.sale || prop.saleHistory?.[0] || {};
+
+      console.log('ATTOM Owner Object Keys:', Object.keys(owner));
+
+      // Try multiple name fields
+      let ownerName = owner.owner1?.fullName ||
+                      owner.corporateOwner ||
+                      owner.ownerName ||
+                      owner.owner1FullName ||
+                      (owner.owner1Last && owner.owner1First ? `${owner.owner1First} ${owner.owner1Last}` : null) ||
+                      (owner.absenteeOwnerName) ||
+                      (prop.summary?.absenteeOwnerName);
+
+      // If still no name, check for ownersFull array
+      if (!ownerName && owner.ownersFull && owner.ownersFull.length > 0) {
+        ownerName = owner.ownersFull[0].fullName || owner.ownersFull[0].name;
+      }
+
+      if (ownerName) {
+        console.log('ATTOM: Got real owner data:', ownerName);
+        return {
+          name: ownerName,
+          mailingAddress: (owner.mailingAddressFull || owner.absenteeOwnerMailAddress) ? {
+            street: owner.mailingAddressOneLine || owner.mailingAddressFull || owner.absenteeOwnerMailAddress,
+            city: owner.mailingAddressCity || owner.absenteeOwnerMailCity,
+            state: owner.mailingAddressState || owner.absenteeOwnerMailState,
+            zip: owner.mailingAddressZip || owner.absenteeOwnerMailZip
+          } : {
+            street: address,
+            city: city,
+            state: state,
+            zip: zip
+          },
+          ownerType: owner.corporateOwner ? 'Corporation' : 'Individual',
+          ownerOccupied: owner.absenteeOwnerStatus === 'O' || owner.ownerOccupied === 'Y' || owner.absenteeInd === 'N',
+          purchaseDate: sale.saleTransDate || sale.recordingDate || sale.contractDate || null,
+          purchasePrice: sale.saleAmountData?.saleAmt || sale.amount || sale.saleAmt || null
+        };
+      }
+    }
+
+    // Fallback to detail endpoint
+    data = await this.makeRequest('/property/detail', {
+      address1: address,
+      address2: `${city}, ${state} ${zip}`
+    });
+
+    if (data && data.property && data.property.length > 0) {
+      const prop = data.property[0];
       const owner = prop.assessment?.owner || prop.owner || {};
       const sale = prop.sale || prop.assessment?.sale || {};
 
       const ownerName = owner.owner1?.fullName ||
                        owner.corporateOwner ||
-                       owner.owner1Last && owner.owner1First ?
-                         `${owner.owner1First} ${owner.owner1Last}` : null;
+                       (owner.owner1Last && owner.owner1First ? `${owner.owner1First} ${owner.owner1Last}` : null);
 
       if (ownerName) {
-        console.log('ATTOM: Got real owner data:', ownerName);
+        console.log('ATTOM: Got owner from detail endpoint:', ownerName);
         return {
           name: ownerName,
           mailingAddress: owner.mailingAddressFull ? {
@@ -220,12 +302,7 @@ class AttomProvider {
             city: owner.mailingAddressCity,
             state: owner.mailingAddressState,
             zip: owner.mailingAddressZip
-          } : {
-            street: address,
-            city: city,
-            state: state,
-            zip: zip
-          },
+          } : { street: address, city, state, zip },
           ownerType: owner.corporateOwner ? 'Corporation' : 'Individual',
           ownerOccupied: owner.absenteeOwnerStatus === 'O' || owner.ownerOccupied === 'Y',
           purchaseDate: sale.saleTransDate || sale.recordingDate || null,
@@ -234,7 +311,7 @@ class AttomProvider {
       }
     }
 
-    console.log('ATTOM: No owner data found, using mock');
+    console.log('ATTOM: No owner data found');
     return this.getMockOwnerInfo(addressParams);
   }
 
