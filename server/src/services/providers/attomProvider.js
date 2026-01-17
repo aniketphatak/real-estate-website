@@ -334,55 +334,23 @@ class AttomProvider {
    * Mock data for development/demo (shown when API fails or is not configured)
    */
   getMockPropertyInfo(addressParams) {
-    return {
-      basic: {
-        propertyType: 'Single Family Residence',
-        yearBuilt: null,
-        bedrooms: null,
-        bathrooms: null,
-        squareFeet: null,
-        lotSize: null,
-        stories: null,
-        parking: null,
-        pool: null,
-        apn: null,
-        zoning: null
-      },
-      details: {},
-      features: [],
-      taxInfo: null,
-      salesHistory: [],
-      _isMockData: true,
-      _note: 'Real data unavailable - ATTOM API not configured or property not found'
-    };
+    // Return null - no mock data, only show real data
+    return null;
   }
 
   getMockValuation(addressParams) {
-    return {
-      estimatedValue: null,
-      range: null,
-      confidence: 'low',
-      lastUpdated: new Date().toISOString(),
-      source: 'ATTOM (No Data)',
-      _isMockData: true
-    };
+    // Return null - no mock data, only show real data
+    return null;
   }
 
   getMockMortgageInfo(addressParams) {
+    // Return empty array - no mock data
     return [];
   }
 
   getMockOwnerInfo(addressParams) {
-    return {
-      name: null,
-      mailingAddress: null,
-      ownerType: null,
-      ownerOccupied: null,
-      purchaseDate: null,
-      purchasePrice: null,
-      _isMockData: true,
-      _note: 'Owner data requires ATTOM API subscription'
-    };
+    // Return null - no mock data, only show real data
+    return null;
   }
 }
 
