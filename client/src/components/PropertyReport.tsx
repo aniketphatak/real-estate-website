@@ -89,9 +89,19 @@ export default function PropertyReport({ data, isLoading }: PropertyReportProps)
             <DataItem label="Bedrooms" value={property.basic?.bedrooms?.toString() || 'N/A'} />
             <DataItem label="Bathrooms" value={property.basic?.bathrooms?.toString() || 'N/A'} />
             <DataItem label="Square Feet" value={formatNumber(property.basic?.squareFeet)} />
-            <DataItem label="Lot Size" value={formatNumber(property.basic?.lotSize) + ' sqft'} />
+            <DataItem label="Lot Size" value={
+              typeof property.basic?.lotSize === 'string'
+                ? property.basic.lotSize
+                : property.basic?.lotSize
+                  ? `${formatNumber(property.basic.lotSize)} sqft`
+                  : 'N/A'
+            } />
             <DataItem label="Stories" value={property.basic?.stories?.toString() || 'N/A'} />
-            <DataItem label="Parking" value={property.basic?.parking ? `${property.basic.parking} car` : 'N/A'} />
+            <DataItem label="Parking" value={
+              property.basic?.parking && property.basic.parking <= 10
+                ? `${property.basic.parking} car`
+                : 'N/A'
+            } />
             <DataItem label="APN" value={property.basic?.apn || 'N/A'} />
             <DataItem label="Zoning" value={property.basic?.zoning || 'N/A'} />
           </div>

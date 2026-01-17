@@ -11,9 +11,11 @@ export interface PropertyBasic {
   bedrooms?: number;
   bathrooms?: number;
   squareFeet?: number;
-  lotSize?: number;
+  lotSize?: number | string;
+  lotSizeAcres?: number;
   stories?: number;
   parking?: number;
+  parkingSqft?: number;
   pool?: boolean;
   apn?: string;
   zoning?: string;
