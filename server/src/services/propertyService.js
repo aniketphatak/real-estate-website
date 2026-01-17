@@ -15,6 +15,9 @@ const geocodingProvider = require('./providers/geocodingProvider');
 const realtorProvider = require('./providers/realtorProvider');
 const openDataProvider = require('./providers/openDataProvider');
 
+// NEW: RentCast API (50 free requests/month - has owner data!)
+const rentcastProvider = require('./providers/rentcastProvider');
+
 class PropertyService {
   constructor() {
     // Primary providers - free real data sources
@@ -24,7 +27,8 @@ class PropertyService {
       census: censusProvider,
       realtor: realtorProvider,
       openData: openDataProvider,
-      geocoding: geocodingProvider
+      geocoding: geocodingProvider,
+      rentcast: rentcastProvider  // NEW: Has owner data!
     };
 
     // Fallback providers (paid APIs or mock data)
@@ -208,19 +212,20 @@ class PropertyService {
     }
 
     try {
-      console.log('Fetching valuations from free sources...');
+      console.log('Fetching valuations from multiple sources...');
 
-      // Fetch valuations from all free sources in parallel
+      // Fetch valuations from all sources in parallel
       const valuations = await Promise.allSettled([
         this.freeProviders.zillowReal.getValuation(addressParams),
         this.freeProviders.redfin.getValuation(addressParams),
+        this.freeProviders.rentcast.getValuation(addressParams),  // NEW: RentCast
         this.freeProviders.census.getValuation(addressParams),
         // Also try paid providers if configured
         this.paidProviders.attom.getValuation(addressParams),
         this.paidProviders.countyRecords.getAssessedValue(addressParams)
       ]);
 
-      const providerNames = ['Zillow', 'Redfin', 'Census (Tract Median)', 'ATTOM', 'County Records'];
+      const providerNames = ['Zillow', 'Redfin', 'RentCast', 'Census (Tract Median)', 'ATTOM', 'County Records'];
 
       const result = {
         estimates: [],
@@ -326,18 +331,36 @@ class PropertyService {
     }
 
     try {
-      // Owner data typically requires paid APIs
-      const [attomOwner, countyOwner] = await Promise.allSettled([
+      // Try multiple sources for owner data
+      const [attomOwner, countyOwner, rentcastOwner] = await Promise.allSettled([
         this.paidProviders.attom.getOwnerInfo(addressParams),
-        this.paidProviders.countyRecords.getOwnerInfo(addressParams)
+        this.paidProviders.countyRecords.getOwnerInfo(addressParams),
+        this.freeProviders.rentcast.getOwnerInfo(addressParams)  // NEW: RentCast has owner data!
       ]);
 
-      const result = dataAggregator.mergeOwnerData(
+      // Merge owner data from all sources
+      let result = dataAggregator.mergeOwnerData(
         attomOwner.status === 'fulfilled' ? attomOwner.value : null,
         countyOwner.status === 'fulfilled' ? countyOwner.value : null
       );
 
-      result.note = 'Owner data requires ATTOM or county API for accurate information';
+      // If no owner data yet, try RentCast result
+      if (!result.current && rentcastOwner.status === 'fulfilled' && rentcastOwner.value) {
+        console.log('Using RentCast owner data');
+        result.current = rentcastOwner.value;
+        result.source = 'RentCast';
+      }
+
+      // Track which sources provided data
+      const sources = [];
+      if (attomOwner.status === 'fulfilled' && attomOwner.value?.name) sources.push('ATTOM');
+      if (countyOwner.status === 'fulfilled' && countyOwner.value?.name) sources.push('County Records');
+      if (rentcastOwner.status === 'fulfilled' && rentcastOwner.value?.name) sources.push('RentCast');
+
+      result.sources = sources;
+      result.note = sources.length > 0
+        ? `Owner data from: ${sources.join(', ')}`
+        : 'Owner data not available - try configuring ATTOM or RentCast API';
 
       cacheService.set(cacheKey, result, 3600);
       return result;
