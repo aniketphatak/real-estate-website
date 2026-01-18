@@ -18,6 +18,9 @@ const openDataProvider = require('./providers/openDataProvider');
 // NEW: RentCast API (50 free requests/month - has owner data!)
 const rentcastProvider = require('./providers/rentcastProvider');
 
+// NEW: Apify Real Estate API with Mortgage History
+const apifyMortgageProvider = require('./providers/apifyMortgageProvider');
+
 class PropertyService {
   constructor() {
     // Primary providers - free real data sources
@@ -28,7 +31,8 @@ class PropertyService {
       realtor: realtorProvider,
       openData: openDataProvider,
       geocoding: geocodingProvider,
-      rentcast: rentcastProvider  // NEW: Has owner data!
+      rentcast: rentcastProvider,  // Has owner data!
+      apify: apifyMortgageProvider  // Has mortgage history!
     };
 
     // Fallback providers (paid APIs or mock data)
@@ -312,22 +316,36 @@ class PropertyService {
     }
 
     try {
-      // Mortgage data typically requires paid APIs
-      // For now, use the paid providers which will return mock data if not configured
-      const [mortgageInfo, lienInfo, nmlsInfo] = await Promise.allSettled([
+      // Try multiple sources for mortgage data
+      const [attomMortgage, apifyMortgage, lienInfo, nmlsInfo] = await Promise.allSettled([
         this.paidProviders.attom.getMortgageInfo(addressParams),
+        this.freeProviders.apify.getMortgageInfo(addressParams),  // Apify mortgage history
         this.paidProviders.countyRecords.getLienInfo(addressParams),
         this.paidProviders.nmls.getLenderInfo(addressParams)
       ]);
 
       const result = {
-        mortgages: mortgageInfo.status === 'fulfilled' ? mortgageInfo.value : [],
+        mortgages: [],
         liens: lienInfo.status === 'fulfilled' ? lienInfo.value : [],
         lenderDetails: nmlsInfo.status === 'fulfilled' ? nmlsInfo.value : null,
         totalOutstanding: 0,
-        lastUpdated: new Date().toISOString(),
-        note: 'Mortgage data requires ATTOM or similar paid API for accurate information'
+        sources: [],
+        lastUpdated: new Date().toISOString()
       };
+
+      // Merge mortgage data from ATTOM
+      if (attomMortgage.status === 'fulfilled' && attomMortgage.value && attomMortgage.value.length > 0) {
+        result.mortgages = attomMortgage.value;
+        result.sources.push('ATTOM');
+        console.log('Got mortgage data from ATTOM:', attomMortgage.value.length, 'records');
+      }
+
+      // If no ATTOM data, try Apify
+      if (result.mortgages.length === 0 && apifyMortgage.status === 'fulfilled' && apifyMortgage.value && apifyMortgage.value.length > 0) {
+        result.mortgages = apifyMortgage.value;
+        result.sources.push('Apify');
+        console.log('Got mortgage data from Apify:', apifyMortgage.value.length, 'records');
+      }
 
       // Calculate total outstanding
       if (result.mortgages && result.mortgages.length > 0) {
@@ -336,6 +354,10 @@ class PropertyService {
           0
         );
       }
+
+      result.note = result.sources.length > 0
+        ? `Mortgage data from: ${result.sources.join(', ')}`
+        : 'Mortgage data not available - configure ATTOM or Apify API';
 
       cacheService.set(cacheKey, result, 1800);
       return result;

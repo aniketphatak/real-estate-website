@@ -2,7 +2,7 @@
  * Format a number as US currency
  */
 export function formatCurrency(value: number | undefined | null): string {
-  if (value === undefined || value === null) return 'N/A';
+  if (value === undefined || value === null || isNaN(value)) return 'N/A';
 
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -16,7 +16,7 @@ export function formatCurrency(value: number | undefined | null): string {
  * Format a number with commas
  */
 export function formatNumber(value: number | undefined | null): string {
-  if (value === undefined || value === null) return 'N/A';
+  if (value === undefined || value === null || isNaN(value)) return 'N/A';
 
   return new Intl.NumberFormat('en-US').format(value);
 }
