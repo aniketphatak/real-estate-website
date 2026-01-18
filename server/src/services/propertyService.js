@@ -440,6 +440,62 @@ class PropertyService {
         this.getOwnerData(addressParams)
       ]);
 
+      // Cross-reference: Fill in purchase price from sales history if missing
+      if (owner?.current && !owner.current.purchasePrice && propertyData?.salesHistory?.length > 0) {
+        const ownerPurchaseDate = owner.current.purchaseDate;
+        if (ownerPurchaseDate) {
+          // Find matching sale by date
+          const matchingSale = propertyData.salesHistory.find(sale => {
+            if (!sale.date) return false;
+            const saleDate = new Date(sale.date).toDateString();
+            const purchaseDate = new Date(ownerPurchaseDate).toDateString();
+            return saleDate === purchaseDate;
+          });
+          if (matchingSale?.price) {
+            owner.current.purchasePrice = matchingSale.price;
+            console.log('Filled purchase price from sales history:', matchingSale.price);
+          }
+        }
+        // If no date match, use most recent sale that could be the purchase
+        if (!owner.current.purchasePrice && propertyData.salesHistory.length > 0) {
+          const latestSale = propertyData.salesHistory[0];
+          if (latestSale?.price && latestSale?.event?.toLowerCase().includes('sold')) {
+            owner.current.purchasePrice = latestSale.price;
+            console.log('Filled purchase price from latest sale:', latestSale.price);
+          }
+        }
+      }
+
+      // Aggregate all unique data sources for display
+      const allSources = new Set();
+
+      // Add property data sources
+      if (propertyData?.sources) {
+        propertyData.sources.forEach(s => allSources.add(s));
+      }
+
+      // Add valuation sources
+      if (valuation?.estimates) {
+        valuation.estimates.forEach(e => {
+          if (e.source) allSources.add(e.source);
+        });
+      }
+
+      // Add mortgage data sources
+      if (mortgage?.sources) {
+        mortgage.sources.forEach(s => allSources.add(s));
+      }
+
+      // Add owner data sources
+      if (owner?.sources) {
+        owner.sources.forEach(s => allSources.add(s));
+      }
+
+      // Update property sources with all aggregated sources
+      if (propertyData) {
+        propertyData.sources = Array.from(allSources);
+      }
+
       const report = {
         address: {
           street: addressParams.address,
