@@ -72,10 +72,9 @@ class ApifyMortgageProvider {
     const { address, city, state, zip } = addressParams;
     const fullAddress = `${address}, ${city}, ${state} ${zip}`;
 
+    // Actor expects 'addresses' as an array
     const results = await this.runActor({
-      address: fullAddress,
-      includeHistory: true,
-      includeMortgage: true
+      addresses: [fullAddress]
     });
 
     if (results && results.length > 0) {
@@ -92,9 +91,9 @@ class ApifyMortgageProvider {
     const { address, city, state, zip } = addressParams;
     const fullAddress = `${address}, ${city}, ${state} ${zip}`;
 
+    // Actor expects 'addresses' as an array
     const results = await this.runActor({
-      address: fullAddress,
-      includeMortgage: true
+      addresses: [fullAddress]
     });
 
     if (results && results.length > 0) {
@@ -112,9 +111,9 @@ class ApifyMortgageProvider {
     const { address, city, state, zip } = addressParams;
     const fullAddress = `${address}, ${city}, ${state} ${zip}`;
 
+    // Actor expects 'addresses' as an array
     const results = await this.runActor({
-      address: fullAddress,
-      includeHistory: true
+      addresses: [fullAddress]
     });
 
     if (results && results.length > 0) {
