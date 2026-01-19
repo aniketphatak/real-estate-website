@@ -21,6 +21,9 @@ const rentcastProvider = require('./providers/rentcastProvider');
 // NEW: Apify Real Estate API with Mortgage History
 const apifyMortgageProvider = require('./providers/apifyMortgageProvider');
 
+// NEW: Apify Zillow Scraper for additional valuations
+const apifyZillowProvider = require('./providers/apifyZillowProvider');
+
 class PropertyService {
   constructor() {
     // Primary providers - free real data sources
@@ -32,7 +35,8 @@ class PropertyService {
       openData: openDataProvider,
       geocoding: geocodingProvider,
       rentcast: rentcastProvider,  // Has owner data!
-      apify: apifyMortgageProvider  // Has mortgage history!
+      apify: apifyMortgageProvider,  // Has mortgage history!
+      apifyZillow: apifyZillowProvider  // Zillow data via Apify
     };
 
     // Fallback providers (paid APIs or mock data)
@@ -227,7 +231,9 @@ class PropertyService {
           this.freeProviders.census.getValuation(addressParams),
           // Also try paid providers if configured
           this.paidProviders.attom.getValuation(addressParams),
-          this.paidProviders.countyRecords.getAssessedValue(addressParams)
+          this.paidProviders.countyRecords.getAssessedValue(addressParams),
+          // Apify Zillow scraper for Zestimate
+          this.freeProviders.apifyZillow.getValuation(addressParams)
         ]),
         // Fetch rent estimate from RentCast
         this.freeProviders.rentcast.getRentEstimate(addressParams).catch(err => {
@@ -236,7 +242,7 @@ class PropertyService {
         })
       ]);
 
-      const providerNames = ['Zillow', 'Redfin', 'RentCast', 'Census (Tract Median)', 'ATTOM', 'County Records'];
+      const providerNames = ['Zillow', 'Redfin', 'RentCast', 'Census (Tract Median)', 'ATTOM', 'County Records', 'Zillow (Apify)'];
 
       const result = {
         estimates: [],
