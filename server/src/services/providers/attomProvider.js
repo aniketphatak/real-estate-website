@@ -159,27 +159,42 @@ class AttomProvider {
       address2: `${city}, ${state} ${zip}`
     });
 
-    // Log the response structure for debugging
     if (data && data.property && data.property.length > 0) {
       const prop = data.property[0];
       console.log('ATTOM Mortgage Response Keys:', Object.keys(prop));
 
-      // Try different possible mortgage data locations
-      const mortgageData = prop.mortgage || prop.mortgageHistory || prop.loan || [];
+      const mortgageData = prop.mortgage;
 
-      if (Array.isArray(mortgageData) && mortgageData.length > 0) {
-        console.log('ATTOM: Got real mortgage data, count:', mortgageData.length);
-        return mortgageData.map(m => ({
-          lender: m.lender?.companyName || m.lenderName || m.lender || 'Unknown Lender',
+      if (mortgageData) {
+        // ATTOM returns mortgage as a single object, not an array
+        // Convert to array format for consistency
+        const mortgages = Array.isArray(mortgageData) ? mortgageData : [mortgageData];
+
+        console.log('ATTOM: Got real mortgage data, count:', mortgages.length);
+
+        return mortgages.map((m, index) => ({
+          // Lender name can be in various fields
+          lender: m.lender?.lastname || m.lender?.companyName || m.lenderName ||
+                  (typeof m.lender === 'string' ? m.lender : null) || 'Unknown Lender',
+          // Title company
+          titleCompany: m.title?.companyname || m.title?.companyName || null,
+          // Loan amounts
           originalAmount: m.amount || m.loanAmount || m.originalLoanAmount || null,
           currentBalance: m.currentBalance || null,
-          interestRate: m.interestRate || m.rate || null,
-          interestRateType: m.interestRateType || m.rateType || 'Fixed',
-          loanType: m.loanType || m.loanPurpose || m.type || 'Conventional',
-          term: m.term || (m.loanTermMonths ? m.loanTermMonths / 12 : null) || null,
-          recordingDate: m.recordingDate || m.documentDate || m.date || null,
-          maturityDate: m.maturityDate || null,
-          position: m.mortgageSequence || m.position || 1
+          // Interest rate info
+          interestRate: m.interestrate || m.interestRate || m.rate || null,
+          interestRateType: m.interestratetype || m.interestRateType || m.rateType ||
+                           (m.loantypecode === 'ARM' ? 'Adjustable Rate' : 'Fixed'),
+          // Loan type
+          loanType: m.loantypecode || m.loanType || m.loanPurpose || m.type || 'Conventional',
+          deedType: m.deedtype || m.deedType || null,
+          // Term in months
+          term: m.term || (m.loanTermMonths ? m.loanTermMonths : null) || null,
+          // Dates
+          recordingDate: m.date || m.recordingDate || m.documentDate || null,
+          maturityDate: m.duedate || m.maturityDate || null,
+          // Position (1st mortgage, 2nd, etc.)
+          position: m.mortgageSequence || m.position || index + 1
         }));
       }
     }
@@ -192,21 +207,24 @@ class AttomProvider {
 
     if (data && data.property && data.property.length > 0) {
       const prop = data.property[0];
-      const mortgageData = prop.mortgage || prop.mortgageHistory || [];
+      const mortgageData = prop.mortgage;
 
-      if (Array.isArray(mortgageData) && mortgageData.length > 0) {
+      if (mortgageData) {
+        const mortgages = Array.isArray(mortgageData) ? mortgageData : [mortgageData];
         console.log('ATTOM: Got mortgage from expandedprofile');
-        return mortgageData.map(m => ({
-          lender: m.lender?.companyName || m.lenderName || m.lender || 'Unknown Lender',
+        return mortgages.map((m, index) => ({
+          lender: m.lender?.lastname || m.lender?.companyName || m.lenderName || 'Unknown Lender',
+          titleCompany: m.title?.companyname || null,
           originalAmount: m.amount || m.loanAmount || null,
           currentBalance: m.currentBalance || null,
-          interestRate: m.interestRate || null,
-          interestRateType: m.interestRateType || 'Fixed',
-          loanType: m.loanType || m.loanPurpose || 'Conventional',
+          interestRate: m.interestrate || m.interestRate || null,
+          interestRateType: m.interestratetype || m.interestRateType || 'Fixed',
+          loanType: m.loantypecode || m.loanType || 'Conventional',
+          deedType: m.deedtype || null,
           term: m.term || null,
-          recordingDate: m.recordingDate || m.documentDate || null,
-          maturityDate: m.maturityDate || null,
-          position: m.mortgageSequence || m.position || 1
+          recordingDate: m.date || m.recordingDate || null,
+          maturityDate: m.duedate || m.maturityDate || null,
+          position: m.mortgageSequence || m.position || index + 1
         }));
       }
     }

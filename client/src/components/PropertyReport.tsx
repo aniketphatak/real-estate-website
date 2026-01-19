@@ -222,13 +222,25 @@ export default function PropertyReport({ data, isLoading }: PropertyReportProps)
               <div className="space-y-3">
                 {mortgage.mortgages.map((m, i) => (
                   <div key={i} className="p-4 border border-gray-200 rounded-lg">
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="font-medium text-gray-900">{m.lender}</div>
-                      <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
-                        Position {m.position || 1}
-                      </span>
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <div className="font-medium text-gray-900">{m.lender}</div>
+                        {m.titleCompany && (
+                          <div className="text-xs text-gray-500">Title: {m.titleCompany}</div>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        {m.loanType && (
+                          <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs">
+                            {m.loanType}
+                          </span>
+                        )}
+                        <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
+                          Position {m.position || 1}
+                        </span>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
                       <div>
                         <span className="text-gray-500">Original Amount:</span>{' '}
                         <span className="font-medium">{formatCurrency(m.originalAmount)}</span>
@@ -241,14 +253,29 @@ export default function PropertyReport({ data, isLoading }: PropertyReportProps)
                       )}
                       {m.interestRate && (
                         <div>
-                          <span className="text-gray-500">Rate:</span>{' '}
-                          <span className="font-medium">{m.interestRate}% {m.interestRateType}</span>
+                          <span className="text-gray-500">Interest Rate:</span>{' '}
+                          <span className="font-medium">{m.interestRate}%</span>
+                          {m.interestRateType && (
+                            <span className="text-xs text-gray-400 ml-1">({m.interestRateType})</span>
+                          )}
+                        </div>
+                      )}
+                      {m.term && (
+                        <div>
+                          <span className="text-gray-500">Term:</span>{' '}
+                          <span className="font-medium">{m.term > 12 ? `${Math.round(m.term / 12)} years` : `${m.term} months`}</span>
                         </div>
                       )}
                       {m.recordingDate && (
                         <div>
                           <span className="text-gray-500">Recorded:</span>{' '}
                           <span className="font-medium">{formatDate(m.recordingDate)}</span>
+                        </div>
+                      )}
+                      {m.maturityDate && (
+                        <div>
+                          <span className="text-gray-500">Maturity Date:</span>{' '}
+                          <span className="font-medium">{formatDate(m.maturityDate)}</span>
                         </div>
                       )}
                     </div>

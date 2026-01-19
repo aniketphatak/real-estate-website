@@ -81,11 +81,13 @@ export interface Valuation {
 
 export interface Mortgage {
   lender: string;
+  titleCompany?: string;
   originalAmount: number;
   currentBalance?: number;
   interestRate?: number;
   interestRateType?: string;
   loanType?: string;
+  deedType?: string;
   term?: number;
   recordingDate?: string;
   maturityDate?: string;
