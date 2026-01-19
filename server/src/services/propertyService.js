@@ -24,6 +24,9 @@ const apifyMortgageProvider = require('./providers/apifyMortgageProvider');
 // NEW: Apify Zillow Scraper for additional valuations
 const apifyZillowProvider = require('./providers/apifyZillowProvider');
 
+// NEW: Santa Clara County Assessor (free public records)
+const sccAssessorProvider = require('./providers/sccAssessorProvider');
+
 class PropertyService {
   constructor() {
     // Primary providers - free real data sources
@@ -36,7 +39,8 @@ class PropertyService {
       geocoding: geocodingProvider,
       rentcast: rentcastProvider,  // Has owner data!
       apify: apifyMortgageProvider,  // Has mortgage history!
-      apifyZillow: apifyZillowProvider  // Zillow data via Apify
+      apifyZillow: apifyZillowProvider,  // Zillow data via Apify
+      sccAssessor: sccAssessorProvider  // Santa Clara County Assessor
     };
 
     // Fallback providers (paid APIs or mock data)
@@ -233,7 +237,9 @@ class PropertyService {
           this.paidProviders.attom.getValuation(addressParams),
           this.paidProviders.countyRecords.getAssessedValue(addressParams),
           // Apify Zillow scraper for Zestimate
-          this.freeProviders.apifyZillow.getValuation(addressParams)
+          this.freeProviders.apifyZillow.getValuation(addressParams),
+          // Santa Clara County Assessor (official assessed value)
+          this.freeProviders.sccAssessor.getAssessedValue(addressParams)
         ]),
         // Fetch rent estimate from RentCast
         this.freeProviders.rentcast.getRentEstimate(addressParams).catch(err => {
@@ -242,7 +248,7 @@ class PropertyService {
         })
       ]);
 
-      const providerNames = ['Zillow', 'Redfin', 'RentCast', 'Census (Tract Median)', 'ATTOM', 'County Records', 'Zillow (Apify)'];
+      const providerNames = ['Zillow', 'Redfin', 'RentCast', 'Census (Tract Median)', 'ATTOM', 'County Records', 'Zillow (Apify)', 'SCC Assessor'];
 
       const result = {
         estimates: [],
